@@ -1,1 +1,161 @@
-Hello World
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Global Child Mortality 1970–2010</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f9f9f9;
+      margin: 0;
+      padding: 20px;
+    }
+    #chart {
+      margin: auto;
+      max-width: 900px;
+    }
+    .annotation {
+      font-size: 14px;
+      fill: #333;
+    }
+    .button {
+      margin: 5px;
+      padding: 8px 12px;
+      background: #007acc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .button:hover {
+      background: #005a9c;
+    }
+  </style>
+</head>
+<body>
+  <h1>Global Decline in Child Mortality (1970–2010)</h1>
+  <div id="chart"></div>
+  <div>
+    <button class="button" onclick="showScene(0)">Scene 1: Global Trend</button>
+    <button class="button" onclick="showScene(1)">Scene 2: Regional Focus</button>
+    <button class="button" onclick="showScene(2)">Scene 3: Explore Country</button>
+  </div>
+
+  <script>
+    const width = 800, height = 500, margin = {top: 50, right: 30, bottom: 50, left: 60};
+    const svg = d3.select("#chart").append("svg")
+                  .attr("width", width)
+                  .attr("height", height);
+    const chartArea = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    let dataByYear = {}, countryData = {}, allYears = [], scene = 0;
+
+    // Parameters
+    let selectedCountry = "Afghanistan";
+
+    // Load data
+    d3.csv("IHME_GBD_2010_MORTALITY_AGE_SPECIFIC_BY_COUNTRY_1970_2010.csv").then(raw => {
+      const childAges = new Set(["0-6 days", "7-27 days", "28-364 days", "1 to 4"]);
+
+      // Parse & aggregate
+      raw.forEach(d => {
+        d.Year = +d.Year;
+        d["Death Rate Per 100,000"] = +d["Death Rate Per 100,000"].replace(/,/g, "");
+        if (d.Sex === "Both" && childAges.has(d["Age Group"])) {
+          const key = d["Country Name"];
+          if (!countryData[key]) countryData[key] = {};
+          if (!countryData[key][d.Year]) countryData[key][d.Year] = 0;
+          countryData[key][d.Year] += d["Death Rate Per 100,000"];
+        }
+      });
+
+      allYears = d3.range(1970, 2011);
+      showScene(0);
+    });
+
+    function showScene(sceneIndex) {
+      scene = sceneIndex;
+      chartArea.selectAll("*").remove();
+
+      const countries = Object.keys(countryData);
+      let x = d3.scaleLinear().domain([1970, 2010]).range([0, innerWidth]);
+      let y = d3.scaleLinear().domain([0, 400000]).range([innerHeight, 0]);
+
+      chartArea.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x).ticks(5));
+      chartArea.append("g").call(d3.axisLeft(y).ticks(6));
+
+      chartArea.append("text")
+        .attr("x", innerWidth / 2).attr("y", -20)
+        .attr("text-anchor", "middle").style("font-size", "18px")
+        .text(scene === 0 ? "Global Average Child Mortality (0-4 yrs)" :
+              scene === 1 ? "Region Comparison: Africa vs Europe" :
+              `Explore: ${selectedCountry}`);
+
+      if (scene === 0) {
+        // Average across countries
+        const avgData = allYears.map(y => {
+          const rates = countries.map(c => countryData[c]?.[y] || 0);
+          return { year: y, rate: d3.mean(rates) };
+        });
+
+        chartArea.append("path")
+          .datum(avgData)
+          .attr("fill", "none")
+          .attr("stroke", "steelblue")
+          .attr("stroke-width", 2)
+          .attr("d", d3.line().x(d => x(d.year)).y(d => y(d.rate)));
+
+        chartArea.append("text")
+          .attr("x", x(1980)).attr("y", y(300000))
+          .attr("class", "annotation")
+          .text("Global average drops by more than half");
+
+      } else if (scene === 1) {
+        // Compare two regions
+        const africa = ["Nigeria", "Ethiopia", "Kenya"];
+        const europe = ["France", "Germany", "United Kingdom"];
+
+        function plotRegion(countries, color) {
+          const regionData = allYears.map(y => {
+            const rates = countries.map(c => countryData[c]?.[y] || 0);
+            return { year: y, rate: d3.mean(rates) };
+          });
+          chartArea.append("path")
+            .datum(regionData)
+            .attr("fill", "none")
+            .attr("stroke", color)
+            .attr("stroke-width", 2)
+            .attr("d", d3.line().x(d => x(d.year)).y(d => y(d.rate)));
+        }
+
+        plotRegion(africa, "red");
+        plotRegion(europe, "green");
+
+        chartArea.append("text").attr("x", x(1975)).attr("y", y(250000))
+          .attr("class", "annotation").text("Africa");
+        chartArea.append("text").attr("x", x(1975)).attr("y", y(50000))
+          .attr("class", "annotation").text("Europe");
+
+      } else if (scene === 2) {
+        const years = allYears;
+        const rates = years.map(y => ({ year: y, rate: countryData[selectedCountry]?.[y] || 0 }));
+
+        chartArea.append("path")
+          .datum(rates)
+          .attr("fill", "none")
+          .attr("stroke", "purple")
+          .attr("stroke-width", 2)
+          .attr("d", d3.line().x(d => x(d.year)).y(d => y(d.rate)));
+
+        chartArea.append("text")
+          .attr("x", x(1985)).attr("y", y(200000))
+          .attr("class", "annotation")
+          .text(`${selectedCountry}'s child mortality trend`);
+      }
+    }
+  </script>
+</body>
+</html>
