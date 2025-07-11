@@ -58,19 +58,14 @@
 <body>
   <h1>Global Decline in Child Mortality (1970–2010)</h1>
   <div id="chart"></div>
-
-  <!-- Scene Buttons -->
   <div>
     <button class="button" onclick="showScene(0)">Scene 1: Global Trend</button>
     <button class="button" onclick="showScene(1)">Scene 2: Wealth Level Comparison</button>
     <button class="button" onclick="showScene(2)">Scene 3: Explore Country</button>
   </div>
-
-  <!-- Country Dropdown (only visible in Scene 3) -->
   <div>
     <select id="countrySelect" onchange="updateCountry(this.value)" style="display:none"></select>
   </div>
-
   <script>
     const width = 800, height = 500, margin = {top: 50, right: 30, bottom: 50, left: 60};
     const svg = d3.select("#chart").append("svg")
@@ -88,17 +83,12 @@
 
     d3.csv("IHME_GBD_2010_MORTALITY_AGE_SPECIFIC_BY_COUNTRY_1970_2010.csv").then(raw => {
       const childAges = new Set(["0-6 days", "7-27 days", "28-364 days", "1 to 4"]);
-
       raw.forEach(d => {
         d.Year = +d.Year;
         if (!targetYears.includes(d.Year)) return;
         d["Death Rate Per 100,000"] = +d["Death Rate Per 100,000"].replace(/,/g, "");
 
-        const ageGroup = d["Age Group"];
-        const sex = d.Sex;
-        const country = d["Country Name"];
-        const wealth = d["Wealth Level"];
-
+        const ageGroup = d["Age Group"], sex = d.Sex, country = d["Country Name"], wealth = d["Wealth Level"];
         if (childAges.has(ageGroup)) {
           if (!countryData[country]) countryData[country] = { wealth, values: { "Both": {}, "Male": {}, "Female": {} } };
           if (!countryData[country].values[sex][d.Year]) countryData[country].values[sex][d.Year] = 0;
@@ -109,7 +99,6 @@
           wealthData[wealth][sex][d.Year].push(d["Death Rate Per 100,000"]);
         }
       });
-
       populateCountryDropdown();
       showScene(0);
     });
@@ -173,69 +162,51 @@
       scene = sceneIndex;
       svg.selectAll(".legend").remove();
       chartArea.selectAll("*").remove();
+
+      chartArea.append("rect")
+        .attr("width", innerWidth)
+        .attr("height", innerHeight)
+        .attr("fill", "#f0f0f0");
+
       document.getElementById("countrySelect").style.display = (scene === 2 ? "inline-block" : "none");
 
       const x = d3.scaleLinear().domain([1970, 2010]).range([0, innerWidth]);
-      const lineGen = d3.line()
-        .defined(d => d.rate != null)
-        .x(d => x(d.year))
-        .y(d => y(d.rate));
-
       let yMax = 0;
 
       if (scene === 0 || scene === 2) {
-        const sexes = ["Both", "Male", "Female"];
-        if (scene === 0) {
-          const countries = Object.keys(countryData);
-          sexes.forEach(sex => {
-            targetYears.forEach(year => {
-              const values = countries.map(c => countryData[c].values[sex][year]).filter(v => v > 0);
-              const mean = d3.mean(values);
-              if (mean > yMax) yMax = mean;
-            });
-          });
-        } else {
-          sexes.forEach(sex => {
-            targetYears.forEach(year => {
-              const val = countryData[selectedCountry]?.values[sex][year];
-              if (val && val > yMax) yMax = val;
-            });
-          });
-        }
-      } else if (scene === 1) {
-        const levels = Object.keys(wealthData);
-        levels.forEach(level => {
+        ["Both", "Male", "Female"].forEach(sex => {
           targetYears.forEach(year => {
-            const values = wealthData[level]["Both"][year] || [];
-            const mean = d3.mean(values);
+            const val = scene === 0
+              ? d3.mean(Object.keys(countryData).map(c => countryData[c].values[sex][year]).filter(v => v > 0))
+              : countryData[selectedCountry]?.values[sex][year];
+            if (val && val > yMax) yMax = val;
+          });
+        });
+      } else if (scene === 1) {
+        Object.keys(wealthData).forEach(level => {
+          targetYears.forEach(year => {
+            const mean = d3.mean(wealthData[level]["Both"][year] || []);
             if (mean > yMax) yMax = mean;
           });
         });
       }
 
       const y = d3.scaleLinear().domain([0, yMax * 1.1]).range([innerHeight, 0]);
-
-      // Draw axes
-      chartArea.append("g")
-        .attr("transform", `translate(0,${innerHeight})`)
-        .call(d3.axisBottom(x).tickValues(targetYears).tickFormat(d => d.toString()));
+      chartArea.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x).tickValues(targetYears));
       chartArea.append("g").call(d3.axisLeft(y));
 
-      // Add axis labels
       chartArea.append("text")
         .attr("x", innerWidth / 2)
         .attr("y", innerHeight + 40)
         .attr("text-anchor", "middle")
-        .attr("font-size", "12px")
         .text("Year");
 
       chartArea.append("text")
         .attr("transform", "rotate(-90)")
-        .attr("x", -innerHeight / 2)
         .attr("y", -45)
+        .attr("x", -innerHeight / 2)
         .attr("text-anchor", "middle")
-        .attr("font-size", "12px")
-        .text("Child Deaths per 100,000 (ages 0–4)");
+        .text("Child Deaths per 100,000");
 
       chartArea.append("text")
         .attr("x", innerWidth / 2)
@@ -248,26 +219,22 @@
 
       addAnnotations();
 
+      const lineGen = d3.line()
+        .defined(d => d.rate != null)
+        .x(d => x(d.year))
+        .y(d => y(d.rate));
+
       if (scene === 0 || scene === 2) {
         const color = d3.scaleOrdinal().domain(["Both", "Male", "Female"]).range(["seagreen", "steelblue", "hotpink"]);
         let group = { "Both": [], "Male": [], "Female": [] };
-
-        if (scene === 0) {
-          const countries = Object.keys(countryData);
-          targetYears.forEach(year => {
-            ["Both", "Male", "Female"].forEach(sex => {
-              const values = countries.map(c => countryData[c].values[sex][year]).filter(v => v > 0);
-              group[sex].push({ year, rate: d3.mean(values) });
-            });
+        targetYears.forEach(year => {
+          ["Both", "Male", "Female"].forEach(sex => {
+            const val = scene === 0
+              ? d3.mean(Object.keys(countryData).map(c => countryData[c].values[sex][year]).filter(v => v > 0))
+              : countryData[selectedCountry]?.values[sex][year];
+            group[sex].push({ year, rate: val || null });
           });
-        } else {
-          targetYears.forEach(year => {
-            ["Both", "Male", "Female"].forEach(sex => {
-              const val = countryData[selectedCountry]?.values[sex][year];
-              group[sex].push({ year, rate: val || null });
-            });
-          });
-        }
+        });
 
         ["Both", "Male", "Female"].forEach(sex => {
           chartArea.append("path")
@@ -299,10 +266,7 @@
 
       } else if (scene === 1) {
         const levels = Object.keys(wealthData);
-        const color = d3.scaleOrdinal()
-          .domain(levels.map(level => `${level}-Both`))
-          .range(d3.schemeTableau10.concat(d3.schemePaired).slice(0, levels.length));
-
+        const color = d3.scaleOrdinal().domain(levels.map(l => `${l}-Both`)).range(d3.schemeTableau10);
         const legendLabels = [];
 
         levels.forEach(level => {
@@ -312,6 +276,7 @@
             year,
             rate: d3.mean(wealthData[level]["Both"][year] || [])
           }));
+
           chartArea.append("path")
             .datum(data)
             .attr("fill", "none")
